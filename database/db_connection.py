@@ -338,3 +338,7 @@ def initialize_db():
     conn.close()
     print("Database ready.")
 
+# QA — Wayne Tong (24017066)
+# Execute: python database/db_connection.py from the project root, or python db_connection.py from the database directory.
+if __name__ == "__main__":
+    initialize_db()
