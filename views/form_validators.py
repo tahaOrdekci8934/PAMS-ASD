@@ -1,6 +1,14 @@
+<<<<<<< HEAD
 # QA — Wayne Tong (24017066): validation rules.
 # Helpers for email, password policy, and UK mobile numbers on forms and login.
 # Centralised here for ease of use.
+=======
+# UI/UX & Frontend — Taha Ordekci (25013992) (input validation wired into PyQt forms).
+# QA — Wayne Tong (24024786): validation rules align with the documented manual and automated test matrix.
+# Shared helpers for email, password policy, and UK mobile numbers on forms and login.
+# Centralised here so all panels apply identical validation logic.
+
+>>>>>>> d7a0e6ec2c932c3a07595f1b3964e0c455e6b113
 import re
 from typing import List
 
@@ -56,6 +64,7 @@ def is_valid_uk_mobile(phone: str) -> bool:
 
 
 def uk_mobile_format_hint() -> str:
+    # Hint text displayed beneath telephone inputs.
     return "UK mobile: exactly 11 digits, starting with 07 (e.g. 07545798234)."
 
 
