@@ -1,27 +1,4 @@
-#Backend & Database — Finn Lennaghan (24024274): credential lookup (users table, hashed password).
-#Look up user by email + hashed password (plain password is never stored).
-conn = get_connection()
-cursor = conn.cursor()
-hashed = hash_password(password)
-cursor.execute(
-    "SELECT * FROM users WHERE email = ? AND password = ?",
-    (email, hashed)
-)
-user = cursor.fetchone()
-conn.close()
-
-#QA — Wayne Tong (24017066): optional isolated login smoke test; production entry point is main.py.
-#Direct execution applies the same database initialisation and stylesheet as main.py, then shows login only.
-if user:
-    initialize_db()
-    app = QApplication(sys.argv)
-    from views.app_theme import get_application_stylesheet
-
-    app.setStyleSheet(get_applicationstylesheet())
-    window = LoginView()
-    window.show()
-    sys.exit(app.exec())
-
+# UI/UX & Frontend — Taha Ordekci (25013992) (login layout, fields, styling, sign-in UX).
 # Agile Project Manager & Security Coordinator — Dylan Morgan (24030018) (RBAC: authenticated user’s role drives next screen).
 # Login screen: email + password, load user from DB, open the dashboard for that role.
 import sys
@@ -46,12 +23,14 @@ class LoginView(QWidget):
         self.setWindowTitle("PAMS - Sign in")
         self.setFixedSize(480, 700)
         self.init_ui()
+
     def init_ui(self):
         # Vertical stretch distributes space so the card sits slightly above the vertical centre.
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(40, 40, 40, 40)
         main_layout.setSpacing(0)
         main_layout.addStretch(1)
+
         # Card frame containing title, fields, and primary action (LoginCard style in app_theme).
         card = QFrame()
         card.setObjectName("LoginCard")
@@ -60,6 +39,7 @@ class LoginView(QWidget):
         card_layout = QVBoxLayout()
         card_layout.setContentsMargins(28, 28, 28, 28)
         card_layout.setSpacing(14)
+
         # Application title and subtitle labels.
         title = QLabel("PAMS")
         title.setAlignment(Qt.AlignCenter)
@@ -67,9 +47,11 @@ class LoginView(QWidget):
         title.setStyleSheet(
             f"color: {app_theme.C_ACCENT_HOVER}; font-size: 26px; font-weight: bold; background: transparent;"
         )
+
         subtitle = QLabel("Paragon Apartment Management System")
         subtitle.setAlignment(Qt.AlignCenter)
         subtitle.setStyleSheet(app_theme.SUBTITLE + " background: transparent;")
+
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
         line.setObjectName("LoginDivider")
@@ -164,6 +146,19 @@ class LoginView(QWidget):
             )
             return
 
+        # Backend & Database — Finn Lennaghan (24024274): credential lookup (users table, hashed password).
+        # Look up user by email + hashed password (plain password is never stored).
+        conn = get_connection()
+        cursor = conn.cursor()
+        hashed = hash_password(password)
+        cursor.execute(
+            "SELECT * FROM users WHERE email = ? AND password = ?",
+            (email, hashed)
+        )
+        user = cursor.fetchone()
+        conn.close()
+
+        if user:
             # Agile PM & Security — Dylan Morgan (24030018): pass role into dashboard so RBAC panels load correctly.
             self.open_dashboard(dict(user))
         else:
@@ -173,3 +168,24 @@ class LoginView(QWidget):
                 "The email or password you entered is incorrect. Please try again.",
             )
             self.password_input.clear()
+
+    def open_dashboard(self, user):
+        # UI/UX & Frontend — Taha Ordekci (25013992): open main window and close login.
+        # Deferred import avoids a circular dependency if dashboard imports this module.
+        from views.dashboard_view import DashboardView
+        self.dashboard = DashboardView(user)
+        self.dashboard.show()
+        self.close()
+
+
+if __name__ == "__main__":
+    # QA — Wayne Tong (24017066): optional isolated login smoke test; production entry point is main.py.
+    # Direct execution applies the same database initialisation and stylesheet as main.py, then shows login only.
+    initialize_db()
+    app = QApplication(sys.argv)
+    from views.app_theme import get_application_stylesheet
+
+    app.setStyleSheet(get_application_stylesheet())
+    window = LoginView()
+    window.show()
+    sys.exit(app.exec_())
