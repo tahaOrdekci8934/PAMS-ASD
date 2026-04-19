@@ -1,4 +1,4 @@
-# QA — Wayne Tong (24024786): validation rules.
+# QA — Wayne Tong (24017066): validation rules.
 # Helpers for email, password policy, and UK mobile numbers on forms and login.
 # Centralised here for ease of use.
 import re
@@ -7,7 +7,7 @@ from typing import List
 from PyQt5.QtCore import QRegularExpression
 from PyQt5.QtGui import QRegularExpressionValidator
 from PyQt5.QtWidgets import QLineEdit
-
+1
 # Compiled patterns reused on each validation call for efficiency.
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _UK_MOBILE_RE = re.compile(r"^07\d{9}$")
