@@ -124,4 +124,3 @@ class Sidebar(QWidget):
         self.login = LoginView()
         self.login.show()
         self.dashboard.close()
->>>>>>> dfdbc53f9070b72cab4c5a879809885ec738ff59
