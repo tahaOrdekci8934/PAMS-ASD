@@ -1,17 +1,271 @@
-        # Backend & Database — Finn Lennaghan (24024274): insert new staff user (hashed password, unique email).
+# Backend & Database — Finn Lennaghan (24024274): insert new staff user (hashed password, unique email).
+# Agile PM & Security — Dylan Morgan (24030018): administrative apartment and lease data are scoped to one office location at a time per assignment requirements.
+from PyQt5.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QLineEdit,
+    QComboBox,
+    QMessageBox,
+    QHeaderView,
+    QStackedWidget,
+    QFrame,
+)
+from PyQt5.QtGui import QFont, QColor
+from database.db_connection import get_connection, hash_password
+from views.form_validators import is_valid_email, password_requirements
+from views import app_theme
+import sqlite3
+import uuid
+
+
 class AdminPanel(QWidget):
     def __init__(self, user):
-        super().__init__()        
+        super().__init__()
+        self.user = user
+        self.assigned_location = "BRISTOL"
 
-    def add_user(self): 
+        root = QVBoxLayout()
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(10)
+
+        # Agile PM & Security — Dylan Morgan (24030018): administrative apartment and lease data are scoped to one office location at a time per assignment requirements.
+        scope_card = QFrame()
+        scope_card.setObjectName("FormCard")
+        scope_layout = QVBoxLayout(scope_card)
+        scope_layout.setContentsMargins(16, 14, 16, 14)
+        scope_layout.setSpacing(8)
+        scope_row = QHBoxLayout()
+        scope_lbl = QLabel("Assigned office location (apartments & leases data scope):")
+        scope_lbl.setStyleSheet(app_theme.FIELD_LABEL + " background: transparent;")
+        self.admin_scope_combo = QComboBox()
+        self.admin_scope_combo.setMinimumWidth(200)
+        self.admin_scope_combo.currentTextChanged.connect(self._on_admin_assigned_location_changed)
+        scope_row.addWidget(scope_lbl)
+        scope_row.addWidget(self.admin_scope_combo)
+        scope_row.addStretch()
+        scope_policy = QLabel(
+            "Switch this dropdown to the Paragon city you are administering. "
+            "Apartments and leases are always filtered to that city. "
+            "Staff accounts remain organisation-wide."
+        )
+        scope_policy.setWordWrap(True)
+        scope_policy.setStyleSheet(app_theme.HINT + " background: transparent;")
+        scope_layout.addLayout(scope_row)
+        scope_layout.addWidget(scope_policy)
+
+        self._populate_admin_scope_combo()
+
+        # QStackedWidget indexes: 0 users, 1 apartments, 2 leases (sidebar order).
+        self.stack = QStackedWidget()
+
+        self.user_widget = self.build_user_management()
+        self.apartment_widget = self.build_apartment_management()
+        self.leases_widget = self.build_leases_management()
+
+        self.stack.addWidget(self.user_widget)
+        self.stack.addWidget(self.apartment_widget)
+        self.stack.addWidget(self.leases_widget)
+
+        root.addWidget(scope_card)
+        root.addWidget(self.stack)
+        self.setLayout(root)
+
+    def show_users(self):
+        # Sidebar index 0: display the user-management page and reload staff accounts.
+        self.stack.setCurrentIndex(0)
+        self.load_users()
+
+    def show_apartments(self):
+        self.stack.setCurrentIndex(1)
+        self.load_apartments()
+
+    def show_leases(self):
+        self.stack.setCurrentIndex(2)
+        self.load_leases()
+
+    def _require_admin(self):
+        # Agile PM & Security — Dylan Morgan (24030018): deny access when this panel is not loaded for an administrator role.
+        if self.user.get("role") != "admin":
+            QMessageBox.critical(
+                self,
+                "Access denied",
+                "Only administrators may use this panel.",
+            )
+            return False
+        return True
+
+    def _populate_admin_scope_combo(self):
+        self.admin_scope_combo.blockSignals(True)
+        self.admin_scope_combo.clear()
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT location FROM apartments ORDER BY location")
+        locs = [r["location"] for r in cursor.fetchall() if r["location"]]
+        conn.close()
+        if not locs:
+            locs = ["BRISTOL", "CARDIFF", "LONDON", "MANCHESTER"]
+        for loc in locs:
+            self.admin_scope_combo.addItem(loc)
+        self.admin_scope_combo.blockSignals(False)
+        if self.admin_scope_combo.count():
+            self.assigned_location = self.admin_scope_combo.currentText()
+
+    def _on_admin_assigned_location_changed(self, text):
+        if not text:
+            return
+        self.assigned_location = text
+        self._sync_apartment_location_field()
+        if hasattr(self, "apt_table"):
+            self.load_apartments()
+        if hasattr(self, "lease_scope_label"):
+            self._refresh_lease_scope_banner()
+            self.load_leases()
+
+    def _sync_apartment_location_field(self):
+        if not hasattr(self, "a_location"):
+            return
+        self.a_location.blockSignals(True)
+        self.a_location.clear()
+        self.a_location.addItem(self.assigned_location)
+        self.a_location.setEnabled(False)
+        self.a_location.blockSignals(False)
+
+    # --- Page 1: staff user administration (add and delete; tenant records are out of scope here) ---
+
+    def build_user_management(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(16)
+
+        title = QLabel("User Management")
+        title.setFont(QFont("Arial", 20, QFont.Bold))
+        title.setStyleSheet(app_theme.PAGE_TITLE + "background: transparent;")
+
+        # Horizontal form row: name, email, password, role selector, add action.
+        form_layout = QHBoxLayout()
+        self.u_name = QLineEdit(); self.u_name.setPlaceholderText("Full Name")
+        self.u_email = QLineEdit(); self.u_email.setPlaceholderText("Email")
+        self.u_pass = QLineEdit(); self.u_pass.setPlaceholderText("Password")
+        self.u_pass.setEchoMode(QLineEdit.Password)
+        self.u_role = QComboBox()
+        self.u_role.addItems(["front_desk", "finance", "maintenance", "admin", "manager"])
+
+        add_btn = QPushButton("Add User")
+        add_btn.clicked.connect(self.add_user)
+
+        for w in [self.u_name, self.u_email, self.u_pass, self.u_role, add_btn]:
+            form_layout.addWidget(w)
+
+        hint_email = QLabel("Email must look like name@domain.com (include '@').")
+        hint_email.setWordWrap(True)
+        hint_email.setStyleSheet(app_theme.HINT + "background: transparent;")
+
+        hint_pass = QLabel(
+            "Password rules for new users: at least 8 characters, include uppercase, lowercase, "
+            "a number, and a special character (e.g. !@#$)."
+        )
+        hint_pass.setWordWrap(True)
+        hint_pass.setStyleSheet(app_theme.HINT + "background: transparent;")
+
+        # Read-only table with per-row delete control in the final column.
+        self.user_table = QTableWidget()
+        self.user_table.setColumnCount(4)
+        self.user_table.setHorizontalHeaderLabels(["Name", "Email", "Role", "Action"])
+        self.user_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.user_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.user_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.user_table.verticalHeader().setVisible(False)
+
+        self.users_empty_hint = QLabel(
+            "No staff users are registered yet. Use the form above to add an account."
+        )
+        self.users_empty_hint.setWordWrap(True)
+        self.users_empty_hint.setStyleSheet(app_theme.HINT + " background: transparent;")
+        self.users_empty_hint.setVisible(False)
+
+        layout.addWidget(title)
+        layout.addLayout(form_layout)
+        layout.addWidget(hint_email)
+        layout.addWidget(hint_pass)
+        layout.addWidget(self.user_table)
+        layout.addWidget(self.users_empty_hint)
+        widget.setLayout(layout)
+
+        self.load_users()
+        return widget
+
+    def load_users(self):
+        # Always query the database so the table reflects the latest inserts and deletions.
         if not self._require_admin():
             return
-        
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT userID, name, email, role FROM users")
+        users = cursor.fetchall()
+        conn.close()
+
+        self.users_empty_hint.setVisible(len(users) == 0)
+        self.user_table.setRowCount(len(users))
+        for row, user in enumerate(users):
+            # Standard text columns use QTableWidgetItem instances.
+            self.user_table.setItem(row, 0, QTableWidgetItem(user["name"]))
+            self.user_table.setItem(row, 1, QTableWidgetItem(user["email"]))
+            self.user_table.setItem(row, 2, QTableWidgetItem(user["role"]))
+
+            # Default argument binds userID per iteration to avoid late-binding closure over the loop variable.
+            del_btn = QPushButton("Delete")
+            del_btn.setStyleSheet(
+                f"background-color: {app_theme.C_DANGER}; color: {app_theme.C_ON_ACCENT}; "
+                f"border-radius: 6px; padding: 6px 12px; font-weight: 600;"
+            )
+            del_btn.clicked.connect(lambda _, uid=user["userID"]: self.delete_user(uid))
+            self.user_table.setCellWidget(row, 3, del_btn)
+
+    def add_user(self):
+        if not self._require_admin():
+            return
+        # Normalise email to lowercase for consistency with the login lookup logic.
         name = self.u_name.text().strip()
         email = self.u_email.text().strip().lower()
         password = self.u_pass.text().strip()
         role = self.u_role.currentText()
 
+        if not name or not email or not password:
+            QMessageBox.warning(
+                self,
+                "Missing information",
+                "Please complete all fields before adding a user.",
+            )
+            return
+
+        if not is_valid_email(email):
+            QMessageBox.warning(
+                self,
+                "Invalid email",
+                "Please enter a valid email address (it must include '@', e.g. name@example.com).",
+            )
+            return
+
+        unmet = password_requirements(password)
+        if unmet:
+            QMessageBox.warning(
+                self,
+                "Password requirements",
+                "The password does not meet the security requirements. Please include:\n- "
+                + "\n- ".join(unmet),
+            )
+            return
+
+        # Primary key uses a UUID string; password stored as an SHA-256 hash consistent with authentication.
+        conn = get_connection()
+        cursor = conn.cursor()
+        # Backend & Database — Finn Lennaghan (24024274): insert new staff user (hashed password, unique email).
         try:
             cursor.execute(
                 "INSERT INTO users (userID, name, email, password, role) VALUES (?, ?, ?, ?, ?)",
