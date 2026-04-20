@@ -1,23 +1,16 @@
-<<<<<<< HEAD
-# QA — Wayne Tong (24017066): validation rules.
-# Helpers for email, password policy, and UK mobile numbers on forms and login.
-# Centralised here for ease of use.
-=======
-# UI/UX & Frontend — Taha Ordekci (25013992) (input validation wired into PyQt forms).
-# QA — Wayne Tong (24024786): validation rules align with the documented manual and automated test matrix.
-# Shared helpers for email, password policy, and UK mobile numbers on forms and login.
-# Centralised here so all panels apply identical validation logic.
-
->>>>>>> d7a0e6ec2c932c3a07595f1b3964e0c455e6b113
+#UI/UX & Frontend — Taha Ordekci (25013992) (input validation wired into PyQt forms).
+#QA — Wayne Tong (24017066): validation rules align with the documented manual and automated test matrix.
+#Shared helpers for email, password policy, and UK mobile numbers on forms and login.
+#Centralised here so all panels apply identical validation logic.
 import re
 from typing import List
 
 from PyQt5.QtCore import QRegularExpression
 from PyQt5.QtGui import QRegularExpressionValidator
 from PyQt5.QtWidgets import QLineEdit
-1
-# Compiled patterns reused on each validation call for efficiency.
-_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+#Compiled patterns reused on each validation call for efficiency.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+.[^@\s]+$")
 _UK_MOBILE_RE = re.compile(r"^07\d{9}$")
 
 

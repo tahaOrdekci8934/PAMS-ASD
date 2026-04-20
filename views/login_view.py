@@ -17,7 +17,7 @@ from views import app_theme
 
 
 class LoginView(QWidget):
-    def __init__(self):
+    def __init__(self):f
         super().__init__()
         # Fixed window dimensions keep the login card centred and consistent across displays.
         self.setWindowTitle("PAMS - Sign in")
