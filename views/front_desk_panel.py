@@ -1,10 +1,231 @@
+# UI/UX & Frontend — Taha Ordekci (25013992) (front desk PyQt: tenant form, tables, maintenance tab, dialogs).
+# Front desk: register tenants, leases, maintenance; early exit and delete tenant flows.
+# Uses SQLite through get_connection() and shares validators with login/admin.
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+                              QPushButton, QTableWidget, QTableWidgetItem,
+                              QLineEdit, QComboBox, QMessageBox, QHeaderView,
+                              QStackedWidget, QFormLayout, QDateEdit, QTextEdit,
+                              QDialog, QDialogButtonBox, QSpinBox, QDoubleSpinBox,
+                              QScrollArea, QFrame, QSizePolicy)
+from PyQt5.QtCore import Qt, QDate
+from PyQt5.QtGui import QFont, QColor
+from database.db_connection import get_connection
+import uuid
+from datetime import date, timedelta
+from views.form_validators import (
+    is_valid_email,
+    is_valid_uk_mobile,
+    normalize_uk_mobile,
+    attach_uk_mobile_input,
+    uk_mobile_format_hint,
+)
+from views import app_theme
+
+
+class FrontDeskPanel(QWidget):
+    def __init__(self, user):
+        super().__init__()
+        self.user = user
+        # QStackedWidget switches between tenant registration and maintenance request pages.
+        self.stack = QStackedWidget()
+
+        self.tenant_widget = self.build_tenant_panel()
+        self.maintenance_widget = self.build_maintenance_panel()
+
+        self.stack.addWidget(self.tenant_widget)
+        self.stack.addWidget(self.maintenance_widget)
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.stack)
+        self.setLayout(layout)
+
+    def show_tenants(self):
+        # Sidebar tab 0: show tenant registration and reload the tenant grid.
+        self.stack.setCurrentIndex(0)
+        self.load_tenants()
+
+    def show_maintenance(self):
+        # Sidebar tab 1: show maintenance intake and refresh apartment and request data.
+        self.stack.setCurrentIndex(1)
+        self._load_all_apartments_for_maintenance()
+        self.load_maintenance_requests()
+
+    # --- Page 1: tenant registration form, directory table, and per-row administrative actions ---
+
+    def build_tenant_panel(self):
+        container = QWidget()
+        outer = QVBoxLayout()
+        outer.setContentsMargins(30, 30, 30, 30)
+        outer.setSpacing(16)
+
+        # Page title using shared stylesheet tokens for visual consistency.
+        title = QLabel("Tenant Registration")
+        title.setFont(QFont("Segoe UI", 20, QFont.Bold))
+        title.setStyleSheet(app_theme.PAGE_TITLE + "background: transparent;")
+
+        # --- Registration form ---
+        form_frame = QFrame()
+        form_frame.setObjectName("FormCard")
+        form_layout = QVBoxLayout()
+        form_layout.setContentsMargins(20, 20, 20, 20)
+        form_layout.setSpacing(10)
+
+        form_lbl = QLabel("Register New Tenant")
+        form_lbl.setStyleSheet(app_theme.SECTION_TITLE + "font-size: 14px; background: transparent;")
+        form_layout.addWidget(form_lbl)
+
+        # Row 1: personal identifiers and contact fields.
+        row1 = QHBoxLayout()
+        self.t_name = QLineEdit(); self.t_name.setPlaceholderText("Full Name *")
+        self.t_ni = QLineEdit(); self.t_ni.setPlaceholderText("NI Number * (e.g. AB123456C)")
+        self.t_phone = QLineEdit()
+        self.t_phone.setPlaceholderText("07545798234")
+        attach_uk_mobile_input(self.t_phone)
+        self.t_email = QLineEdit(); self.t_email.setPlaceholderText("Email Address")
+        for w in [self.t_name, self.t_ni, self.t_phone, self.t_email]:
+            row1.addWidget(w)
+        form_layout.addLayout(row1)
+
+        phone_hint = QLabel(uk_mobile_format_hint())
+        phone_hint.setWordWrap(True)
+        phone_hint.setStyleSheet(app_theme.HINT + "background: transparent;")
+        form_layout.addWidget(phone_hint)
+
+        email_hint = QLabel(
+            "Email is required and must be valid (include '@', e.g. tenant@email.com)."
+        )
+        email_hint.setWordWrap(True)
+        email_hint.setStyleSheet(app_theme.HINT + "background: transparent;")
+        form_layout.addWidget(email_hint)
+
+        # Row 2: employment and reference information.
+        row2 = QHBoxLayout()
+        self.t_occupation = QLineEdit(); self.t_occupation.setPlaceholderText("Occupation")
+        self.t_references = QLineEdit(); self.t_references.setPlaceholderText("References (e.g. John Smith, 07700900000)")
+        row2.addWidget(self.t_occupation)
+        row2.addWidget(self.t_references)
+        form_layout.addLayout(row2)
+
+        # Row 3: apartment requirements and optional lease assignment.
+        row3 = QHBoxLayout()
+        self.t_apt_req = QLineEdit(); self.t_apt_req.setPlaceholderText("Apartment Requirements (e.g. 2-bedroom, Bristol)")
+
+        apt_lbl = QLabel("Assign Apartment:")
+        apt_lbl.setStyleSheet(app_theme.FIELD_LABEL + "background: transparent;")
+        self.t_apt_combo = QComboBox()
+        self._load_available_apartments()
+
+        row3.addWidget(self.t_apt_req)
+        row3.addWidget(apt_lbl)
+        row3.addWidget(self.t_apt_combo)
+        form_layout.addLayout(row3)
+
+        # Row 4: lease calendar range and deposit amount.
+        row4 = QHBoxLayout()
+
+        start_lbl = QLabel("Lease Start:")
+        start_lbl.setStyleSheet(app_theme.FIELD_LABEL + "background: transparent;")
+        self.t_start_date = QDateEdit()
+        self.t_start_date.setCalendarPopup(True)
+        self.t_start_date.setDate(QDate.currentDate())
+
+        end_lbl = QLabel("Lease End:")
+        end_lbl.setStyleSheet(app_theme.FIELD_LABEL + "background: transparent;")
+        self.t_end_date = QDateEdit()
+        self.t_end_date.setCalendarPopup(True)
+        self.t_end_date.setDate(QDate.currentDate().addYears(1))
+
+        # Synchronise start and end dates so the lease interval remains at least one day in length.
+        self.t_start_date.dateChanged.connect(self._tenant_lease_start_changed)
+        self.t_end_date.dateChanged.connect(self._tenant_lease_end_changed)
+        self._tenant_lease_start_changed()
+        self._tenant_lease_end_changed()
+
+        lease_date_hint = QLabel(
+            "Lease end must be at least one day after the start date (the calendar will adjust if needed)."
+        )
+        lease_date_hint.setWordWrap(True)
+        lease_date_hint.setStyleSheet(app_theme.HINT + "background: transparent;")
+
+        deposit_lbl = QLabel("Deposit (£):")
+        deposit_lbl.setStyleSheet(app_theme.FIELD_LABEL + "background: transparent;")
+        self.t_deposit = QDoubleSpinBox()
+        self.t_deposit.setRange(0, 99999)
+        self.t_deposit.setValue(1200)
+        self.t_deposit.setPrefix("£ ")
+
+        row4.addWidget(start_lbl)
+        row4.addWidget(self.t_start_date)
+        row4.addWidget(end_lbl)
+        row4.addWidget(self.t_end_date)
+        row4.addWidget(deposit_lbl)
+        row4.addWidget(self.t_deposit)
+        form_layout.addLayout(row4)
+        form_layout.addWidget(lease_date_hint)
+
+        # Primary registration action.
+        btn_row = QHBoxLayout()
+        reg_btn = QPushButton("Register Tenant")
+        reg_btn.setFixedWidth(180)
+        reg_btn.clicked.connect(self.register_tenant)
+        btn_row.addStretch()
+        btn_row.addWidget(reg_btn)
+        form_layout.addLayout(btn_row)
+
+        form_frame.setLayout(form_layout)
+
+        # --- Tenant directory table ---
+        table_lbl = QLabel("Registered Tenants")
+        table_lbl.setStyleSheet(app_theme.SECTION_TITLE + "font-size: 14px; background: transparent;")
+
+        self.tenant_table = QTableWidget()
+        self.tenant_table.setColumnCount(7)
+        self.tenant_table.setHorizontalHeaderLabels([
+            "Name", "NI Number", "Phone", "Email", "Occupation", "Apartment", "Actions"
+        ])
+        tenant_hdr = self.tenant_table.horizontalHeader()
+        # Stretch text columns; reserve the actions column for multiple buttons without equal-width stretch.
+        for col in range(6):
+            tenant_hdr.setSectionResizeMode(col, QHeaderView.Stretch)
+        tenant_hdr.setSectionResizeMode(6, QHeaderView.ResizeToContents)
+        self.tenant_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.tenant_table.setSelectionBehavior(QTableWidget.SelectRows)
+        vh = self.tenant_table.verticalHeader()
+        vh.setVisible(False)
+        # Increased default row height so embedded action buttons are not clipped vertically.
+        vh.setDefaultSectionSize(52)
+        vh.setMinimumSectionSize(48)
+        self.tenant_table.setMinimumHeight(250)
+
+        outer.addWidget(title)
+        outer.addWidget(form_frame)
+        outer.addWidget(table_lbl)
+        outer.addWidget(self.tenant_table)
+        container.setLayout(outer)
+
+        self.load_tenants()
+        return container
+
+    def _load_available_apartments(self):
+        # Apartment assignment list restricted to vacant units (occupancyStatus = 0).
+        self.t_apt_combo.clear()
+        self.t_apt_combo.addItem("-- No Assignment --", None)
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT apartmentID, location, type, monthlyRent FROM apartments WHERE occupancyStatus = 0"
+        )
+        for apt in cursor.fetchall():
+            label = f"{apt['location']} | {apt['type'] or 'N/A'} | £{apt['monthlyRent']}/mo"
+            self.t_apt_combo.addItem(label, apt['apartmentID'])
+        conn.close()
+
+    def load_tenants(self):
+        conn = get_connection()
+        cursor = conn.cursor()
         # Backend & Database — Finn Lennaghan (24024274): keep lease_state consistent with calendar dates before SELECT.
         # Aligns with database initialisation: past end dates transition ACTIVE or LEAVING leases to ENDED.
-class FrontDeskPanel:    
-    def update_lease_states(self):
-        conn = get_connection() 
-        cursor = conn.cursor()    
-        
         cursor.execute(
             """
             UPDATE lease_agreements
