@@ -1,7 +1,296 @@
-        # Backend & Database — Finn Lennaghan (24024274): persist PAID status with existence and idempotency checks.
+# UI/UX & Frontend — Taha Ordekci (25013992) (finance PyQt screens: invoices, reports, filters, actions).
+# Finance: list invoices, mark paid, delete rows, simple reports / bulk delete.
+from PyQt5.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QComboBox,
+    QMessageBox,
+    QHeaderView,
+    QStackedWidget,
+    QFrame,
+    QSizePolicy,
+)
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont, QColor
+from datetime import date as _date
+
+from database.db_connection import get_connection
+from views import app_theme
+
+
 class FinancePanel(QWidget):
-         
+    def __init__(self, user):
+        super().__init__()
+        self.user = user
+
+        # Stacked views: index 0 invoices, index 1 financial reports.
+        self.stack = QStackedWidget()
+        self.invoices_widget = self.build_invoices_panel()
+        self.reports_widget = self.build_reports_panel()
+
+        self.stack.addWidget(self.invoices_widget)
+        self.stack.addWidget(self.reports_widget)
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.stack)
+        self.setLayout(layout)
+
+    def show_invoices(self):
+        # Reload data on each visit so invoice status reflects the latest database state.
+        self.stack.setCurrentIndex(0)
+        self.load_invoices()
+
+    def show_reports(self):
+        self.stack.setCurrentIndex(1)
+        self.load_reports()
+
+    def build_invoices_panel(self):
+        container = QWidget()
+        outer = QVBoxLayout()
+        outer.setContentsMargins(30, 30, 30, 30)
+        outer.setSpacing(16)
+
+        # FormCard object name selects the global stylesheet card treatment.
+        card = QFrame()
+        card.setObjectName("FormCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(20, 20, 20, 20)
+        card_layout.setSpacing(16)
+
+        title = QLabel("Invoices & Payments")
+        title.setFont(QFont("Segoe UI", 20, QFont.Bold))
+        title.setStyleSheet(app_theme.PAGE_TITLE + "background: transparent;")
+
+        filter_row = QHBoxLayout()
+        filter_label = QLabel("Filter:")
+        filter_label.setStyleSheet(app_theme.FIELD_LABEL + "background: transparent;")
+
+        self.invoices_filter = QComboBox()
+        self.invoices_filter.addItems(["ALL", "UNPAID", "PAID", "LATE"])
+        self.invoices_filter.currentTextChanged.connect(self.load_invoices)
+
+        filter_row.addWidget(filter_label)
+        filter_row.addWidget(self.invoices_filter)
+        filter_row.addStretch()
+
+        # Late invoice counter and notification control; the button is enabled only when the late count is positive.
+        late_row = QHBoxLayout()
+        self.late_alert_lbl = QLabel("Late invoices: 0")
+        self.late_alert_lbl.setStyleSheet(
+            f"color: {app_theme.C_DANGER}; font-size: 13px; font-weight: 600; background: transparent;"
+        )
+        self.notify_btn = QPushButton("Notify Late Tenants")
+        self.notify_btn.setEnabled(False)
+        self.notify_btn.clicked.connect(self.notify_late_tenants)
+        late_row.addWidget(self.late_alert_lbl)
+        late_row.addStretch()
+        late_row.addWidget(self.notify_btn)
+
+        self.invoices_table = QTableWidget()
+        self.invoices_table.setColumnCount(7)
+        self.invoices_table.setHorizontalHeaderLabels(
+            ["Invoice ID", "Tenant", "Apartment", "Amount (£)", "Due Date", "Status", "Action"]
+        )
+        inv_hdr = self.invoices_table.horizontalHeader()
+        inv_hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        for col in range(1, 6):
+            inv_hdr.setSectionResizeMode(col, QHeaderView.Stretch)
+        inv_hdr.setSectionResizeMode(6, QHeaderView.ResizeToContents)
+        self.invoices_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.invoices_table.setSelectionBehavior(QTableWidget.SelectRows)
+        inv_vh = self.invoices_table.verticalHeader()
+        inv_vh.setVisible(False)
+        inv_vh.setDefaultSectionSize(52)
+        inv_vh.setMinimumSectionSize(48)
+        self.invoices_table.setMinimumHeight(300)
+
+        card_layout.addWidget(title)
+        card_layout.addLayout(filter_row)
+        card_layout.addLayout(late_row)
+        card_layout.addWidget(self.invoices_table)
+        inv_hint = QLabel(
+            "Use Delete on a row to remove that invoice from the register. Paid rows remove payment history for that bill."
+        )
+        inv_hint.setWordWrap(True)
+        inv_hint.setStyleSheet(app_theme.HINT + "background: transparent;")
+        card_layout.addWidget(inv_hint)
+        outer.addWidget(card)
+        container.setLayout(outer)
+        return container
+
+    def load_invoices(self):
+        # Status filter drives the WHERE clause; ALL selects the full invoice set.
+        status_filter = self.invoices_filter.currentText()
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Join invoices to leases, tenants, and apartments for display columns.
+        # Date comparisons assume ISO-8601 (yyyy-mm-dd) due date strings in SQLite.
+        base_query = """
+            SELECT
+                i.invoiceID,
+                t.name AS tenantName,
+                a.location || ' - ' || COALESCE(a.type,'') AS apartment,
+                i.amount,
+                i.dueDate,
+                i.status
+            FROM invoices i
+            JOIN lease_agreements la ON la.leaseID = i.leaseID
+            JOIN tenants t ON t.tenantID = la.tenantID
+            JOIN apartments a ON a.apartmentID = la.apartmentID
+        """
+
+        # Construct the WHERE clause using parameter binding rather than string concatenation.
+        where = ""
+        params = []
+        if status_filter == "UNPAID":
+            where = " WHERE i.status = ?"
+            params.append("UNPAID")
+        elif status_filter == "PAID":
+            where = " WHERE i.status = ?"
+            params.append("PAID")
+        elif status_filter == "LATE":
+            where = " WHERE i.status = 'UNPAID' AND date(i.dueDate) < date('now')"
+
+        order_by = " ORDER BY i.status DESC, date(i.dueDate) ASC"
+
+        cursor.execute(base_query + where + order_by, params)
+        invoices = cursor.fetchall()
+
+        # Secondary query: count of unpaid invoices past due date for the alert label and notify action.
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM invoices
+            WHERE status = 'UNPAID' AND date(dueDate) < date('now')
+            """
+        )
+        late_cnt = int(cursor.fetchone()["cnt"] or 0)
+        self.late_alert_lbl.setText(f"Late invoices: {late_cnt}")
+        self.notify_btn.setEnabled(late_cnt > 0)
+
+        conn.close()
+
+        # One row per invoice; the final column hosts row-level action widgets.
+        self.invoices_table.setRowCount(len(invoices))
+        for row, inv in enumerate(invoices):
+            invoice_id = inv["invoiceID"]
+            tenant = inv["tenantName"]
+            apartment = inv["apartment"]
+            amount = inv["amount"]
+            due_date = inv["dueDate"]
+            status = inv["status"]
+
+            id_item = QTableWidgetItem(str(invoice_id))
+            # Tooltip carries the full identifier when the column width truncates the text.
+            id_item.setToolTip(str(invoice_id))
+            self.invoices_table.setItem(row, 0, id_item)
+            self.invoices_table.setItem(row, 1, QTableWidgetItem(tenant or ""))
+            self.invoices_table.setItem(row, 2, QTableWidgetItem(apartment or ""))
+            self.invoices_table.setItem(row, 3, QTableWidgetItem(f"{amount:.2f}" if amount is not None else "0.00"))
+            self.invoices_table.setItem(row, 4, QTableWidgetItem(due_date or ""))
+
+            status_item = QTableWidgetItem(status or "")
+            # Colour coding: unpaid and past due use the danger palette; unpaid with future due date use warning.
+            is_late = False
+            if status == "UNPAID" and due_date:
+                try:
+                    is_late = _date.fromisoformat(str(due_date)) < _date.today()
+                except ValueError:
+                    is_late = False
+
+            if status_item.text() == "UNPAID":
+                status_item.setForeground(
+                    QColor(app_theme.C_DANGER) if is_late else QColor(app_theme.C_WARNING)
+                )
+            if status_item.text() == "PAID":
+                status_item.setForeground(QColor(app_theme.C_SUCCESS))
+            self.invoices_table.setItem(row, 5, status_item)
+
+            # Action cell: read-only Paid label, or Mark Paid plus Delete for open invoices.
+            action_widget = QWidget()
+            action_layout = QHBoxLayout()
+            action_layout.setContentsMargins(6, 6, 6, 6)
+            action_layout.setSpacing(8)
+
+            btn_geom = (
+                "min-height: 32px !important; padding: 6px 12px !important; "
+                "font-size: 11px; border-radius: 6px; font-weight: 600; border: none;"
+            )
+
+            if status == "PAID":
+                paid_lbl = QLabel("Paid")
+                paid_lbl.setStyleSheet(
+                    f"color: {app_theme.C_SUCCESS}; font-weight: 600; background: transparent;"
+                )
+                action_layout.addWidget(paid_lbl)
+            else:
+                pay_btn = QPushButton("Mark Paid")
+                pay_btn.setStyleSheet(
+                    f"background-color: {app_theme.C_SUCCESS}; color: {app_theme.C_TEXT}; {btn_geom}"
+                )
+                pay_btn.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+                pay_btn.setMinimumHeight(32)
+                pay_btn.clicked.connect(lambda _, iid=invoice_id: self.mark_invoice_paid(iid))
+                action_layout.addWidget(pay_btn)
+
+            del_btn = QPushButton("Delete")
+            del_btn.setStyleSheet(
+                f"background-color: {app_theme.C_DANGER}; color: {app_theme.C_ON_ACCENT}; {btn_geom}"
+            )
+            del_btn.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+            del_btn.setMinimumHeight(32)
+            del_btn.clicked.connect(
+                lambda _, iid=invoice_id, tn=tenant or "", am=amount, st=status or "":
+                self.delete_invoice(iid, tn, am, st)
+            )
+            action_layout.addWidget(del_btn)
+
+            action_layout.addStretch()
+            action_widget.setLayout(action_layout)
+            action_widget.setMinimumHeight(44)
+            action_widget.setMinimumWidth(max(action_widget.sizeHint().width(), 220))
+            self.invoices_table.setCellWidget(row, 6, action_widget)
+            self.invoices_table.resizeRowToContents(row)
+            if self.invoices_table.rowHeight(row) < 52:
+                self.invoices_table.setRowHeight(row, 52)
+
+        self.invoices_table.resizeColumnToContents(0)
+        self.invoices_table.resizeColumnToContents(6)
+
+    def notify_late_tenants(self):
+        # No external messaging integration: emulate notification by counting distinct affected tenants.
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT COUNT(DISTINCT la.tenantID) AS tenantCount
+            FROM invoices i
+            JOIN lease_agreements la ON la.leaseID = i.leaseID
+            WHERE i.status = 'UNPAID' AND date(i.dueDate) < date('now')
+            """
+        )
+        tenant_count = int(cursor.fetchone()["tenantCount"] or 0)
+        conn.close()
+
+        if tenant_count <= 0:
+            QMessageBox.information(self, "No Late Payments", "There are no late unpaid invoices to notify.")
+            return
+
+        QMessageBox.information(
+            self,
+            "Late Payment Notifications",
+            f"Notifications sent (emulated) to {tenant_count} tenant(s) with late unpaid invoices.",
+        )
+
     def mark_invoice_paid(self, invoice_id: str):
+        # Backend & Database — Finn Lennaghan (24024274): persist PAID status with existence and idempotency checks.
         conn = get_connection()
         try:
             cur = conn.cursor()
