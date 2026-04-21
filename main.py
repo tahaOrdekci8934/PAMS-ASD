@@ -1,4 +1,7 @@
+# Application layering: Login → Dashboard → role-specific panels → database (aligned with UML / design documentation).
+# System Analyst & UML Architect — Nacer Bouchelghoum (25014000)
 # Agile & security coordination (RBAC in code, sprint evidence in Git) — Dylan Morgan (24030018)
+# Standard library / Qt
 import sys
 from PyQt5.QtWidgets import QApplication
 
@@ -16,6 +19,6 @@ if __name__ == "__main__":
     app.setStyleSheet(get_application_stylesheet())
     window = LoginView()
     window.show()
-    
+
     # Placeholder for QA exit logic
     pass
