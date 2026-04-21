@@ -1,17 +1,48 @@
-# Agile PM & Security — Dylan Morgan (24030018): deny access when this panel is not loaded for a maintenance role.
+# UI/UX & Frontend — Taha Ordekci (25013992) (maintenance staff work-order table + resolve dialog).
+# Maintenance staff: open jobs, update status, add resolution notes and costs.
+from PyQt5.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QComboBox,
+    QMessageBox,
+    QHeaderView,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QSpinBox,
+    QDoubleSpinBox,
+    QFrame,
+    QSizePolicy,
+    QDateEdit,
+    QPlainTextEdit,
+)
+from PyQt5.QtCore import Qt, QDate
+from PyQt5.QtGui import QFont, QColor
+
+from database.db_connection import get_connection
+from views import app_theme
+
+
 class MaintenancePanel(QWidget):
     def __init__(self, user):
-
         super().__init__()
         self.user = user
+
+        # Single-view role: the dashboard invokes show_work_orders from the sole navigation entry.
         outer_layout = QVBoxLayout()
         outer_layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(outer_layout)
 
         self.work_widget = self.build_work_orders_panel()
         outer_layout.addWidget(self.work_widget)
-  
+
     def _require_maintenance_staff(self):
+        # Agile PM & Security — Dylan Morgan (24030018): deny access when this panel is not loaded for a maintenance role.
         if self.user.get("role") != "maintenance":
             QMessageBox.critical(
                 self,
@@ -388,3 +419,4 @@ class MaintenancePanel(QWidget):
         finally:
             conn.close()
             self.load_work_orders()
+
