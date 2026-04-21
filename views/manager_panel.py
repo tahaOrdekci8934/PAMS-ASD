@@ -1,11 +1,95 @@
-        # Backend & Database — Finn Lennaghan (24024274): read-only SQL aggregates for occupancy by city.
-        # occupancyStatus 1 = occupied, 0 = available; occupancy rate percentage computed in Python.
+# UI/UX & Frontend — Taha Ordekci (25013992) (manager dashboards: occupancy, reports, locations).
+# Manager: read-only style overview (occupancy, rent, maintenance snapshot).
+from PyQt5.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QComboBox,
+    QHeaderView,
+    QStackedWidget,
+    QFrame,
+)
+from PyQt5.QtGui import QFont
+from database.db_connection import get_connection
+from views import app_theme
+
+
 class ManagerPanel(QWidget):
     def __init__(self, user):
         super().__init__()
         self.user = user
 
-    def load_occupancy(self):        
+        # Three stacked pages correspond to the three manager sidebar entries.
+        self.stack = QStackedWidget()
+
+        self.occupancy_widget = self.build_occupancy_panel()
+        self.reports_widget = self.build_reports_panel()
+        self.locations_widget = self.build_locations_panel()
+
+        self.stack.addWidget(self.occupancy_widget)   # index 0
+        self.stack.addWidget(self.reports_widget)     # index 1
+        self.stack.addWidget(self.locations_widget)   # index 2
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.stack)
+        self.setLayout(layout)
+
+    def show_occupancy(self):
+        # Tab 0: aggregate apartment counts per city from the apartments table.
+        self.stack.setCurrentIndex(0)
+        self.load_occupancy()
+
+    def show_reports(self):
+        # Tab 1: financial aggregates from invoices and maintenance cost aggregates.
+        self.stack.setCurrentIndex(1)
+        self.load_reports()
+
+    def show_locations(self):
+        # Tab 2: city filter with read-only apartment listing for the selected location.
+        self.stack.setCurrentIndex(2)
+        self.load_locations()
+
+    def build_occupancy_panel(self):
+        container = QWidget()
+        outer = QVBoxLayout()
+        outer.setContentsMargins(30, 30, 30, 30)
+        outer.setSpacing(16)
+
+        card = QFrame()
+        card.setObjectName("FormCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(20, 20, 20, 20)
+        card_layout.setSpacing(16)
+
+        title = QLabel("Occupancy Overview")
+        title.setFont(QFont("Segoe UI", 20, QFont.Bold))
+        title.setStyleSheet(app_theme.PAGE_TITLE + "background: transparent;")
+
+        self.occupancy_table = QTableWidget()
+        self.occupancy_table.setColumnCount(5)
+        self.occupancy_table.setHorizontalHeaderLabels(
+            ["Location", "Total", "Occupied", "Available", "Occupancy Rate (%)"]
+        )
+        self.occupancy_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.occupancy_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.occupancy_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.occupancy_table.verticalHeader().setVisible(False)
+        self.occupancy_table.setMinimumHeight(330)
+
+        card_layout.addWidget(title)
+        card_layout.addWidget(self.occupancy_table)
+        outer.addWidget(card)
+        container.setLayout(outer)
+        return container
+
+    def load_occupancy(self):
+        # Backend & Database — Finn Lennaghan (24024274): read-only SQL aggregates for occupancy by city.
+        # occupancyStatus 1 = occupied, 0 = available; occupancy rate percentage computed in Python.
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(
