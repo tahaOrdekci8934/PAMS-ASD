@@ -8,11 +8,14 @@ from views.app_theme import get_application_stylesheet
 from views.login_view import LoginView
 
 if __name__ == "__main__":
+    # Backend & Database — Finn Lennaghan (24024274): create/update tables, seed data, sync staff passwords.
+    initialize_db()
+
     # UI/UX & Frontend — Taha Ordekci (25013992): Qt app shell, global stylesheet, first window.
     app = QApplication(sys.argv)
     app.setStyleSheet(get_application_stylesheet())
     window = LoginView()
     window.show()
     
-    # Placeholder for database init and QA exit logic
+    # Placeholder for QA exit logic
     pass
