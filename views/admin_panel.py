@@ -1,20 +1,10 @@
-# Backend & Database — Finn Lennaghan (24024274): insert new staff user (hashed password, unique email).
-# Agile PM & Security — Dylan Morgan (24030018): administrative apartment and lease data are scoped to one office location at a time per assignment requirements.
-from PyQt5.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
-    QLineEdit,
-    QComboBox,
-    QMessageBox,
-    QHeaderView,
-    QStackedWidget,
-    QFrame,
-)
+# UI/UX & Frontend — Taha Ordekci (25013992) (admin PyQt screens: users, apartments, lease table).
+# Admin: create staff users, manage flats, view leases (incl. ACTIVE / LEAVING / ENDED).
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+                              QPushButton, QTableWidget, QTableWidgetItem,
+                              QLineEdit, QComboBox, QMessageBox, QHeaderView,
+                              QStackedWidget, QFormLayout, QDialog, QFrame)
+from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QColor
 from database.db_connection import get_connection, hash_password
 from views.form_validators import is_valid_email, password_requirements
@@ -27,6 +17,7 @@ class AdminPanel(QWidget):
     def __init__(self, user):
         super().__init__()
         self.user = user
+        # Initial assigned office; superseded once locations are loaded from the database.
         self.assigned_location = "BRISTOL"
 
         root = QVBoxLayout()
