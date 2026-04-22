@@ -36,7 +36,7 @@ pip install -r requirements.txt
 
 ## Running the application
 
-Always run from the **project root** so package imports resolve correctly:
+Always run from root so package imports resolve correctly:
 
 ```bash
 python main.py
@@ -133,3 +133,9 @@ Include **`pams_dump.sql`** (and optionally a copy of **`pams.db`**) in your sub
 | Stale UI data | Several panels reload when switching sidebar tabs; use role-specific refresh actions where provided. |
 
 ---
+
+##  Testing
+From the project root:
+python3 -m unittest tests/test_security.py -v                                                                                                           
+python3 -m unittest tests/test_form_validators.py -v                                                                                                      
+python3 -m unittest tests/test_db_connection.py -v   
