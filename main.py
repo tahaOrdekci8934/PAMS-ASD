@@ -14,7 +14,7 @@ if __name__ == "__main__":
 
     # UI/UX & Frontend — Taha Ordekci (25013992): Qt app shell, global stylesheet, first window.
     app = QApplication(sys.argv)
-    app.setStyleSheet(get_applicationstylesheet())
+    app.setStyleSheet(get_application_stylesheet())
     window = LoginView()
     window.show()
 
