@@ -2,12 +2,6 @@
 Security and RBAC tests for PAMS-ASD.
 QA — Wayne Tong (24017066)
 
-Covers (from test matrix):
-  #25 - Login with correct credentials returns the matching user row
-  #26 - Login with wrong password returns no user
-  #27 - Login with an unknown email returns no user
-  #28 - Each seeded staff account maps to the expected role
-  #29 - Plaintext passwords are never stored — only SHA-256 digests
 """
 
 import hashlib
@@ -20,10 +14,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from database.db_connection import hash_password
 
-# ---------------------------------------------------------------------------
 # Shared seed data — mirrors db_connection.initialize_db exactly so tests
 # reflect what the live application inserts.
-# ---------------------------------------------------------------------------
 
 SEED_STAFF = [
     ("U001", "Sarah Mitchell",  "sarah.mitchell@paragon-pams.uk",  "Pams#Desk2026!",    "front_desk"),
@@ -95,7 +87,7 @@ class TestLoginSuccess(unittest.TestCase):
                 self.assertEqual(user["name"], name)
 
 
-# #26 — Wrong password returns no user
+# Wrong password returns no user
 class TestLoginWrongPassword(unittest.TestCase):
     def setUp(self):
         self.conn = _build_users_db()
@@ -126,11 +118,7 @@ class TestLoginWrongPassword(unittest.TestCase):
         user = _login(self.conn, "sarah.mitchell@paragon-pams.uk", "Pams#Finance2026!")
         self.assertIsNone(user)
 
-
-# ---------------------------------------------------------------------------
-# #27 — Unknown email returns no user
-# ---------------------------------------------------------------------------
-
+#  Unknown email returns no user
 class TestLoginUnknownEmail(unittest.TestCase):
     def setUp(self):
         self.conn = _build_users_db()
@@ -156,7 +144,7 @@ class TestLoginUnknownEmail(unittest.TestCase):
         self.assertIsNone(user)
 
 
-#28 — Each seeded staff account maps to the expected role
+# Each seeded staff account maps to the expected role
 class TestRoleAssignment(unittest.TestCase):
     def setUp(self):
         self.conn = _build_users_db()
@@ -202,7 +190,7 @@ class TestRoleAssignment(unittest.TestCase):
 
 
 
-#29 — Plaintext passwords are never stored; only SHA-256 digests persist
+#Plaintext passwords are never stored; only SHA-256 digests persist
 
 class TestPasswordStorage(unittest.TestCase):
     def setUp(self):
