@@ -43,8 +43,9 @@ After at least one successful launch, sign in with (email is matched case-insens
 Automatic Tests
 From the project root (the folder that contains main.py and tests/):
 
-python -m unittest tests.test_form_validators -v
-python -m unittest tests.test_hash_password -v
+python3 -m unittest tests/test_security.py -v                                                                                                           
+python3 -m unittest tests/test_form_validators.py -v                                                                                                      
+python3 -m unittest tests/test_db_connection.py -v        
 
 The first module covers shared validators (email, password policy, UK mobile helpers) used by login and forms. The second checks that hash_password produces the expected SHA-256 hex digests for stored staff credentials.
 
