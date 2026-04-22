@@ -1,0 +1,3 @@
+# Python 3.10+ recommended
+# PAMS desktop app (PyQt5 GUI + SQLite)
+PyQt5>=5.15.0

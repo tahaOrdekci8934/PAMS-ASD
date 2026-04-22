@@ -1,0 +1,135 @@
+# PAMS — Paragon Apartment Management System
+
+A desktop client for managing apartments, tenants, leases, invoices, and maintenance requests. The app uses **PyQt5** for the user interface and **SQLite** (`pams.db`) for local persistence. It is intended as a coursework-friendly demo with seeded staff accounts and sample data.
+
+---
+
+## Features
+
+- **Role-based access:** After sign-in, each staff role sees a tailored dashboard and navigation set.
+- **Admin:** Staff user management, apartment records for the **assigned office** (dropdown scope), and a read-only **office-scoped** lease list with status colouring (ACTIVE / LEAVING / ENDED).
+- **Front desk:** Tenant registration and lifecycle (including early exit), lease-linked flows, and maintenance intake (**occupied apartments only** in the apartment picker).
+- **Finance:** Invoice list with filters, mark paid, single-row and bulk deletes, financial summaries by location.
+- **Maintenance:** Work order table with status workflow (pending → in progress → resolved), resolution dialog (**scheduled visit date**, **tenant liaison note**, time, cost), and optional removal of completed rows.
+- **Manager:** Occupancy by city, combined financial and maintenance reports, per-location apartment lists.
+
+---
+
+## Requirements
+
+- **Python** 3.10+ (3.12+ recommended; use whatever version your team standardises on).
+- **PyQt5** ≥ 5.15 (see `requirements.txt`).
+
+---
+
+## Installation
+
+From the project root (the folder that contains `main.py`):
+
+```bash
+python -m venv venv
+source venv/bin/activate          # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+---
+
+## Running the application
+
+Always run from the **project root** so package imports resolve correctly:
+
+```bash
+python main.py
+```
+
+On first launch, `initialize_db()` creates or updates the SQLite schema, applies lightweight migrations where needed, refreshes demo staff passwords, and seeds apartments, tenants, leases, invoices, and sample maintenance rows when the database is empty.
+
+The database file is created or updated at **`database/pams.db`**. It is listed in **`.gitignore`** so each clone keeps a local file; run the application once to generate it if it is missing.
+
+---
+
+## Demo staff accounts
+
+Use these after the database has initialised at least once (first successful `python main.py` run):
+
+| Role        | Email                               | Password        |
+|------------|--------------------------------------|-----------------|
+| Front desk | `sarah.mitchell@paragon-pams.uk`    | `Pams#Desk2026!` |
+| Finance    | `james.okonkwo@paragon-pams.uk`     | `Pams#Finance2026!` |
+| Maintenance| `priya.sharma@paragon-pams.uk`     | `Pams#Maint2026!` |
+| Admin      | `marcus.webb@paragon-pams.uk`       | `Pams#Admin2026!` |
+| Manager    | `elena.rossi@paragon-pams.uk`       | `Pams#Mgr2026!` |
+
+Sign-in normalises email to lowercase to match stored values.
+
+---
+
+## Running tests
+
+From the project root:
+
+```bash
+python -m unittest tests.test_form_validators -v
+```
+
+This exercises shared validators (email, password rules, UK mobile helpers) used across forms and login.
+
+---
+
+## Optional: rebuild the database only
+
+To run schema updates, migrations, and staff-account refresh **without opening the GUI**, from the **project root**:
+
+```bash
+python database/db_connection.py
+```
+
+Alternatively:
+
+```bash
+cd database && python db_connection.py
+```
+
+**Note:** If `apartments` and `tenants` are already populated, this does **not** wipe your existing tenant or billing data; it reapplies migrations and refreshes the five seeded staff users. Seeding of demo flats and tenants runs only when those tables are empty.
+
+---
+
+## Database dump (submission)
+
+The module assessment typically asks for a **database dump** alongside source code. For SQLite, export a text dump after you have prepared the demo data you want markers to see:
+
+```bash
+sqlite3 database/pams.db .dump > database/pams_dump.sql
+```
+
+Include **`pams_dump.sql`** (and optionally a copy of **`pams.db`**) in your submission ZIP, with a short note on how to import or replace the database file if required.
+
+---
+
+## Repository structure
+
+| Path | Purpose |
+|------|---------|
+| `main.py` | Application entrypoint |
+| `requirements.txt` | Python dependencies |
+| `.gitignore` | Excludes `venv/`, `__pycache__/`, local `database/pams.db`, IDE metadata, etc. |
+| `database/` | SQLite connection, schema, migrations, seeding (`db_connection.py`; `pams.db` at runtime; optional `pams_dump.sql` for submission) |
+| `views/` | PyQt5 UI: login, dashboard, sidebar, and role-specific panels |
+| `tests/` | Automated tests (e.g. `unittest` modules); additional test files may be added over time |
+
+**Important:** Keep `database/db_connection.py` inside the `database/` package. Imports such as `from database.db_connection import …` expect that layout; moving the module to the repository root will break the application unless imports are refactored project-wide.
+
+**`.gitignore`:** Local `database/pams.db` is not committed by default. Include `pams_dump.sql` (and/or `pams.db`) in your submission ZIP if required; add `pams_dump.sql` to Git only if your team chooses to version it.
+
+---
+
+## Troubleshooting
+
+| Issue | What to check |
+|-------|----------------|
+| `ModuleNotFoundError: No module named 'database'` | Run `main.py` from the project root, not from inside `views/` or `database/`. |
+| `No module named 'PyQt5'` | Activate your virtual environment and run `pip install -r requirements.txt`. |
+| Login fails for demo users | Run the app once so `initialize_db()` can refresh staff rows and password hashes. |
+| Stale UI data | Several panels reload when switching sidebar tabs; use role-specific refresh actions where provided. |
+
+---
